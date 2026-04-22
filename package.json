@@ -1,0 +1,11 @@
+{
+  "name": "talentkick-bot",
+  "version": "1.0.0",
+  "main": "talentkick-whatsapp-bot.js",
+  "scripts": {
+    "start": "node talentkick-whatsapp-bot.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
