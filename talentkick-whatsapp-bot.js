@@ -281,9 +281,9 @@ async function handleIncoming(message) {
     // Sub-menu topic selections → send answer
     if (ANSWERS[selectedId]) {
       await sendText(from, ANSWERS[selectedId]);
-      // After answering, offer to go back to main menu
+      // After answering, invite to chat with team
       setTimeout(() => {
-        sendText(from, "❓ Need anything else? Just reply *menu* to see all options again, or type your question!");
+        sendText(from, "Still have questions? We'd love to hear from you — just reply and our team will get back to you personally! 💛");
       }, 1000);
       return;
     }
