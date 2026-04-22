@@ -255,31 +255,43 @@ const ANSWERS = {
   ext_contact: `📬 *General Contact*\n\n📧 Email: info@talentkick.ch\n📍 Switzerland 🇨🇭\n📸 Instagram & LinkedIn: @talentkick\n\n👉 www.talentkick.ch\n\nWe respond within a few business days 😊`,
 };
 
-// ─── TRACK WHO HAS RECEIVED AN ANSWER (in-memory) ───────────────────
-const awaitingHumanReply = new Set();
+// ─── TRACK WHO IS WAITING TO ASK A QUESTION ─────────────────────────
+const waitingToAsk = new Set();
+
+// ─── SEND ASK TEAM BUTTON ─────────────────────────────────────────────
+async function sendAskTeamButton(to) {
+  return sendMessage({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: "Still have questions? Our team is here for you 💛" },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "ask_team", title: "💛 Ask our team" } }
+        ]
+      }
+    }
+  });
+}
 
 // ─── HANDLE INCOMING MESSAGES ────────────────────────────────────────
 async function handleIncoming(message) {
   const from = message.from;
   const type = message.type;
 
-  // User sent a text message
+  // If they are waiting to ask a question → save their message and stop bot
+  if (waitingToAsk.has(from) && type === "text") {
+    // Bot stops here — message lands in inbox for team to reply manually
+    waitingToAsk.delete(from);
+    await sendText(from, "Got it! Our team will get back to you personally very soon 💛");
+    return;
+  }
+
+  // User sent a text message → show main menu
   if (type === "text") {
-    const body = message.text?.body?.toLowerCase().trim() || "";
-
-    // If they already got an answer → their reply goes to the team (do nothing, just let it land in inbox)
-    if (awaitingHumanReply.has(from)) {
-      // Don't auto-reply — let the team respond manually
-      return;
-    }
-
-    // Keywords to show menu again
-    if (body === "menu" || body === "hi" || body === "hello" || body === "hey" || body === "start") {
-      await sendMainMenu(from);
-      return;
-    }
-
-    // First time texting → show main menu
     await sendMainMenu(from);
     return;
   }
@@ -288,20 +300,26 @@ async function handleIncoming(message) {
   if (type === "interactive" && message.interactive?.type === "list_reply") {
     const selectedId = message.interactive.list_reply.id;
 
-    // Top-level menu selections → show sub-menu
+    // Top-level menu → show sub-menu
     if (selectedId === "menu_applicant") return sendApplicantMenu(from);
     if (selectedId === "menu_batch")     return sendBatchMenu(from);
     if (selectedId === "menu_partner")   return sendPartnerMenu(from);
     if (selectedId === "menu_external")  return sendExternalMenu(from);
 
-    // Sub-menu topic selections → send answer
+    // Sub-menu topic → send answer + ask team button
     if (ANSWERS[selectedId]) {
       await sendText(from, ANSWERS[selectedId]);
-      // Mark this person as having received an answer
-      awaitingHumanReply.add(from);
-      setTimeout(() => {
-        sendText(from, "Still have questions? We'd love to hear from you — just reply and our team will get back to you personally! 💛");
-      }, 1000);
+      setTimeout(() => sendAskTeamButton(from), 1000);
+      return;
+    }
+  }
+
+  // User tapped "Ask our team" button
+  if (type === "interactive" && message.interactive?.type === "button_reply") {
+    const buttonId = message.interactive.button_reply.id;
+    if (buttonId === "ask_team") {
+      waitingToAsk.add(from);
+      await sendText(from, "Of course! Go ahead and type your question and our team will get back to you personally 💛");
       return;
     }
   }
