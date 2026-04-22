@@ -255,15 +255,31 @@ const ANSWERS = {
   ext_contact: `📬 *General Contact*\n\n📧 Email: info@talentkick.ch\n📍 Switzerland 🇨🇭\n📸 Instagram & LinkedIn: @talentkick\n\n👉 www.talentkick.ch\n\nWe respond within a few business days 😊`,
 };
 
+// ─── TRACK WHO HAS RECEIVED AN ANSWER (in-memory) ───────────────────
+const awaitingHumanReply = new Set();
+
 // ─── HANDLE INCOMING MESSAGES ────────────────────────────────────────
 async function handleIncoming(message) {
   const from = message.from;
   const type = message.type;
 
-  // User sent a text message → show main menu
+  // User sent a text message
   if (type === "text") {
     const body = message.text?.body?.toLowerCase().trim() || "";
-    // Always send main menu on any text
+
+    // If they already got an answer → their reply goes to the team (do nothing, just let it land in inbox)
+    if (awaitingHumanReply.has(from)) {
+      // Don't auto-reply — let the team respond manually
+      return;
+    }
+
+    // Keywords to show menu again
+    if (body === "menu" || body === "hi" || body === "hello" || body === "hey" || body === "start") {
+      await sendMainMenu(from);
+      return;
+    }
+
+    // First time texting → show main menu
     await sendMainMenu(from);
     return;
   }
@@ -281,7 +297,8 @@ async function handleIncoming(message) {
     // Sub-menu topic selections → send answer
     if (ANSWERS[selectedId]) {
       await sendText(from, ANSWERS[selectedId]);
-      // After answering, invite to chat with team
+      // Mark this person as having received an answer
+      awaitingHumanReply.add(from);
       setTimeout(() => {
         sendText(from, "Still have questions? We'd love to hear from you — just reply and our team will get back to you personally! 💛");
       }, 1000);
