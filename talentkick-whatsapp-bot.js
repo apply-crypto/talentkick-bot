@@ -52,23 +52,24 @@ async function sendText(to, text) {
   return sendMessage({ messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { body: text } });
 }
 
-// ─── BACK BUTTON ONLY (for regular answers) ──────────────────────────
+// ─── REGULAR ANSWER BUTTONS (back + close) ───────────────────────────
 async function sendBackButton(to) {
   return sendMessage({
     messaging_product: "whatsapp", recipient_type: "individual", to, type: "interactive",
     interactive: {
       type: "button",
-      body: { text: "Would you like to know anything else?" },
+      body: { text: "Was this helpful? What would you like to do next?" },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "back_menu", title: "↩️ Back to menu" } },
+          { type: "reply", reply: { id: "back_menu",     title: "↩️ Back to menu" } },
+          { type: "reply", reply: { id: "found_answer",  title: "✅ I found my answer" } },
         ]
       }
     }
   });
 }
 
-// ─── ASK TEAM + BACK (only for "Other") ──────────────────────────────
+// ─── OTHER BUTTONS (ask team + back + close) ──────────────────────────
 async function sendOtherButtons(to) {
   return sendMessage({
     messaging_product: "whatsapp", recipient_type: "individual", to, type: "interactive",
@@ -77,8 +78,9 @@ async function sendOtherButtons(to) {
       body: { text: "Our team is here for you 💛 What would you like to do?" },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "ask_team",  title: "💛 Ask our team" } },
-          { type: "reply", reply: { id: "back_menu", title: "↩️ Back to menu" } },
+          { type: "reply", reply: { id: "ask_team",      title: "💛 Ask our team" } },
+          { type: "reply", reply: { id: "back_menu",     title: "↩️ Back to menu" } },
+          { type: "reply", reply: { id: "found_answer",  title: "✅ I found my answer" } },
         ]
       }
     }
@@ -312,10 +314,18 @@ async function handleIncoming(message) {
     }
 
     if (buttonId === "back_menu") {
-      // Go back to the sub-menu they came from, or main menu
       const subMenu = lastSubMenu.get(from);
       if (subMenu) return subMenu(from);
       return sendMainMenu(from);
+    }
+
+    if (buttonId === "found_answer") {
+      await sendText(from, "Amazing! 🎉 So glad we could help.
+
+Feel free to reach out anytime — we're always here for you 💛
+
+👉 www.talentkick.ch");
+      return;
     }
   }
 
