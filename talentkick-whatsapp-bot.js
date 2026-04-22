@@ -14,7 +14,7 @@ const app = express();
 app.use(express.json());
 
 // ─── YOUR CREDENTIALS ──────────────────────────────────────────────
-const ACCESS_TOKEN   = "EAANds37PrHwBRaQbCBXb3f6I6sH2cHRqPl6nXJOhZAl1BWLYHbJoEphKMExXxdxZAZAe1uyz61CuOsgsf77xl27edyoZCrFmSzokNXZANHE001z9ZCBojiCiBIE04UVUuLZAiPvtnxh7YjJBsL99AAPRwlbUPD2fmjvq7n8cDMpjEIMviEu8s3YMmUjZBYWJN9eJjX2MG0RmQ4F7jnnLGizKrCMfZAleFtGRzWWcZCL1XziAsjLFDxOTcuAj9Edo0e1b9cAS8ugPcgo1BhSVtiKKF4VtbYg8tTLw8TItqy6XoZD";
+const ACCESS_TOKEN   = "EAANds37PrHwBRXq4hVrxHsYWZANEA94azGZAmE4K0XvbNEJ9h3rwOzpntFC85Cf1qND5f632cNxLwYZARjeslQEi71RWcrXV3TfHWDzKnJZBJjCUAf6wr21RmB7ZC06IZCIuBU1cpZBj0qFSycyVlhuS6l5S0elBZAaKiDZCf1EjZAsansb9qsRdk2OoqcWuCM6G5pWpSp4EZCCoiqSO6YLqSQHtq5V8Dp58hSuXCCWlZCAXMxCnE60vbdy5KZCkpA9y4ZCSqfpsqcAlvMHrue3e89HuZCyvL0vfVyhs2I97ASFjQZDZD";
 const PHONE_NUMBER_ID = "1072262365971856";
 const VERIFY_TOKEN   = "talentkick_webhook_2024";      // You choose this — paste same in Meta dashboard
 // ───────────────────────────────────────────────────────────────────
