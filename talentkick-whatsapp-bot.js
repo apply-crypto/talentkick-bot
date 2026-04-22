@@ -271,8 +271,17 @@ async function handleIncoming(message) {
     return;
   }
 
-  // Text message → main menu
+  // Text message
   if (type === "text") {
+    const body = message.text?.body?.toLowerCase().trim() || "";
+    const greetings = ["hi", "hello", "hallo", "hey", "hola", "bonjour", "ciao", "start", "menu"];
+
+    // If handed off but they send a greeting → reactivate bot
+    if (greetings.some(g => body.includes(g))) {
+      handedOffToTeam.delete(from);
+      waitingToAsk.delete(from);
+    }
+
     await sendMainMenu(from);
     return;
   }
