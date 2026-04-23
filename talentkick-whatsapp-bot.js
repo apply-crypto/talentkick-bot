@@ -7,11 +7,17 @@ const PHONE_NUMBER_ID = "1115185408338275";
 const VERIFY_TOKEN    = "talentkick_webhook_2024";
 const API_URL         = "https://graph.facebook.com/v19.0/" + PHONE_NUMBER_ID + "/messages";
 const HANDOFF_MS      = 72 * 60 * 60 * 1000;
+const INTEREST_LIST   = "https://forms.monday.com/forms/712378ebd14956e786905256fcd55720?r=use1";
+const LINKEDIN        = "https://www.linkedin.com/company/talentkick";
 
 const handedOffToTeam = new Map();
 const waitingToAsk    = new Set();
 const lastSubMenu     = new Map();
 const hasSeenIntro    = new Set();
+
+// Multi-step conversation state
+// state: { step, data: {} }
+const convState = new Map();
 
 const GREETINGS = ["hi", "hello", "hallo", "hey", "hola", "bonjour", "ciao", "start", "apply", "menu"];
 
@@ -23,6 +29,13 @@ function isHandedOff(from) {
     return false;
   }
   return true;
+}
+
+function clearState(from) {
+  handedOffToTeam.delete(from);
+  waitingToAsk.delete(from);
+  hasSeenIntro.delete(from);
+  convState.delete(from);
 }
 
 async function sendMessage(payload) {
@@ -113,7 +126,7 @@ async function sendApplicantMenu(to) {
       footer: { text: "talentkick.ch/apply" },
       action: { button: "Explore", sections: [{ title: "I want to know about...", rows: [
         { id: "app_apply",     title: "\ud83d\udce2 Apply to TK-S26",      description: "Open now \u2014 don\u2019t miss it!" },
-        { id: "app_eligible",  title: "\u2705 Am I eligible?",             description: "Requirements to join TK" },
+        { id: "app_eligible",  title: "\u2705 Am I eligible?",             description: "Check your requirements" },
         { id: "app_programme", title: "\ud83c\udf93 How does TK work?",    description: "Programme + funding explained" },
         { id: "app_qa",        title: "\ud83d\udcde Book a free Q&A",      description: "Talk to our team directly" },
         { id: "app_other",     title: "\ud83d\udcac Something else",       description: "Any other question" },
@@ -132,10 +145,10 @@ async function sendBatchMenu(to) {
       body: { text: "Great to hear from you! \ud83d\ude4c\n\nHow can we support your journey today?" },
       footer: { text: "talentkick.ch" },
       action: { button: "Get support", sections: [{ title: "I need help with...", rows: [
-        { id: "batch_schedule",  title: "\ud83d\uddd3\ufe0f Schedule & materials",  description: "Events, links & resources" },
-        { id: "batch_milestones",title: "\ud83c\udfc6 Milestones & coaching",       description: "Deadlines & 1:1 sessions" },
-        { id: "batch_support",   title: "\ud83d\udee0\ufe0f I need support",         description: "Issues & help" },
-        { id: "batch_other",     title: "\ud83d\udcac Something else",              description: "Any other question" },
+        { id: "batch_schedule",   title: "\ud83d\uddd3\ufe0f Schedule & materials",  description: "Events, links & resources" },
+        { id: "batch_milestones", title: "\ud83c\udfc6 Milestones & coaching",       description: "Deadlines & 1:1 sessions" },
+        { id: "batch_support",    title: "\ud83d\udee0\ufe0f I need support",         description: "Issues & help" },
+        { id: "batch_other",      title: "\ud83d\udcac Something else",              description: "Any other question" },
       ]}]}
     }
   });
@@ -177,71 +190,268 @@ async function sendExternalMenu(to) {
   });
 }
 
+// ─── MULTI-STEP FLOWS ────────────────────────────────────────────────
+
+// ELIGIBILITY FLOW
+async function startEligibilityFlow(to) {
+  convState.set(to, { flow: "eligibility", step: 1, data: {} });
+  await sendText(to,
+    "\u2705 *Let\u2019s check your eligibility!* \ud83d\ude80\n\n" +
+    "Just a few quick questions.\n\n" +
+    "*1\ufe0f\u20e3 Which university or UAS are you currently enrolled at?*"
+  );
+}
+
+// COLLAB EXISTING FLOW
+async function startCollabExistingFlow(to) {
+  convState.set(to, { flow: "collab_existing", step: 1, data: {} });
+  await sendText(to,
+    "\ud83c\udf31 *Great to hear from an existing TK collaborator!* \ud83d\ude4c\n\n" +
+    "Let us get a few details so our team can follow up with you personally.\n\n" +
+    "*1\ufe0f\u20e3 What is your name?*"
+  );
+}
+
+// COLLAB JOIN FLOW
+async function startCollabJoinFlow(to) {
+  convState.set(to, { flow: "collab_join", step: 1, data: {} });
+  await sendText(to,
+    "\ud83d\udca1 *Amazing \u2014 we love meeting new collaborators!* \ud83d\ude80\n\n" +
+    "Let us get a few details so our team can reach out to you personally.\n\n" +
+    "*1\ufe0f\u20e3 What is your name?*"
+  );
+}
+
+async function handleConvFlow(from, text) {
+  const state = convState.get(from);
+  if (!state) return false;
+
+  const flow = state.flow;
+  const step = state.step;
+
+  // ── ELIGIBILITY ──────────────────────────────────────────────────
+  if (flow === "eligibility") {
+    if (step === 1) {
+      state.data.university = text;
+      state.step = 2;
+      await sendText(from,
+        "*2\ufe0f\u20e3 What is your current student level?*\n\n" +
+        "Reply with one of the following:\n" +
+        "- Bachelor\n- Master\n- PhD"
+      );
+      return true;
+    }
+    if (step === 2) {
+      state.data.level = text;
+      state.step = 3;
+      await sendText(from,
+        "*3\ufe0f\u20e3 How many semesters do you have left in your studies?*\n\n" +
+        "(Just type a number, e.g. 3)"
+      );
+      return true;
+    }
+    if (step === 3) {
+      state.data.semesters = text;
+      convState.delete(from);
+      const d = state.data;
+      const semNum = parseInt(d.semesters) || 0;
+      const isMasterPhD = d.level.toLowerCase().includes("master") || d.level.toLowerCase().includes("phd") || d.level.toLowerCase().includes("doctor");
+      const hasEnough = semNum >= 2;
+
+      if (!isMasterPhD) {
+        await sendText(from,
+          "\u2705 *Your Eligibility Results*\n\n" +
+          "Thanks for sharing, " + d.university + " student! \ud83d\ude4c\n\n" +
+          "Talent Kick is currently designed for *Master\u2019s and PhD students*.\n\n" +
+          "Unfortunately Bachelor students are not eligible for our current programme.\n\n" +
+          "But don\u2019t worry \u2014 you can join our *interest list* to be notified when this changes or when new opportunities open up! \ud83d\udc47\n\n" +
+          "\ud83d\udcdd Join the interest list: " + INTEREST_LIST + "\n\n" +
+          "Follow our journey on LinkedIn: " + LINKEDIN
+        );
+      } else if (!hasEnough) {
+        await sendText(from,
+          "\u2705 *Your Eligibility Results*\n\n" +
+          "Thanks " + d.university + " " + d.level + " student! \ud83d\ude4c\n\n" +
+          "Talent Kick requires at least *2 semesters remaining* from the programme start.\n\n" +
+          "With " + d.semesters + " semester(s) left it might be tight \u2014 but we\u2019d love to keep you in the loop for future cohorts!\n\n" +
+          "\ud83d\udcdd Join the interest list: " + INTEREST_LIST + "\n\n" +
+          "Follow our journey on LinkedIn: " + LINKEDIN
+        );
+      } else {
+        await sendText(from,
+          "\u2705 *Your Eligibility Results*\n\n" +
+          "Great news! \ud83c\udf89\n\n" +
+          "Based on what you\u2019ve shared:\n" +
+          "\ud83c\udf93 University: " + d.university + "\n" +
+          "\ud83d\udcda Level: " + d.level + "\n" +
+          "\u23f0 Semesters left: " + d.semesters + "\n\n" +
+          "You *look eligible* for Talent Kick! \ud83d\ude80\n\n" +
+          "The programme runs 1\u20134 semesters and is designed to fit alongside your studies. You could potentially extend up to " + Math.min(semNum, 4) + " semesters with us.\n\n" +
+          "Next step \u2014 apply now or book a free Q&A with our team!\n\n" +
+          "\ud83d\udc49 Apply: www.talentkick.ch/apply\n" +
+          "\ud83d\udcde Book Q&A: calendly.com/gabriela-talentkick/tk-s26-q-a-with-talent-kick\n\n" +
+          "\ud83d\udcdd Also join our interest list to stay updated: " + INTEREST_LIST
+        );
+      }
+      setTimeout(function() { sendBackButton(from); }, 1000);
+      return true;
+    }
+  }
+
+  // ── COLLAB EXISTING ──────────────────────────────────────────────
+  if (flow === "collab_existing") {
+    if (step === 1) {
+      state.data.name = text;
+      state.step = 2;
+      await sendText(from, "*2\ufe0f\u20e3 What is your email address?*");
+      return true;
+    }
+    if (step === 2) {
+      state.data.email = text;
+      state.step = 3;
+      await sendText(from, "*3\ufe0f\u20e3 What is your organisation or university?*");
+      return true;
+    }
+    if (step === 3) {
+      state.data.org = text;
+      state.step = 4;
+      await sendText(from, "*4\ufe0f\u20e3 What is your field or area of work?*");
+      return true;
+    }
+    if (step === 4) {
+      state.data.field = text;
+      convState.delete(from);
+      const d = state.data;
+      await sendText(from,
+        "\ud83c\udf31 *Thanks " + d.name + "!* \ud83d\ude4c\n\n" +
+        "Our team will be in touch with you very soon at *" + d.email + "*\n\n" +
+        "In the meantime, let\u2019s connect on LinkedIn! \ud83d\udc49 " + LINKEDIN + "\n\n" +
+        "Excited to keep building together! \ud83d\ude80"
+      );
+      await sendText(from,
+        "\ud83d\udce5 *New Collaborator Enquiry*\n\n" +
+        "Name: " + d.name + "\n" +
+        "Email: " + d.email + "\n" +
+        "Organisation: " + d.org + "\n" +
+        "Field: " + d.field + "\n" +
+        "Type: Existing collaborator\n" +
+        "WhatsApp: " + from
+      );
+      setTimeout(function() { sendBackButton(from); }, 1000);
+      return true;
+    }
+  }
+
+  // ── COLLAB JOIN ──────────────────────────────────────────────────
+  if (flow === "collab_join") {
+    if (step === 1) {
+      state.data.name = text;
+      state.step = 2;
+      await sendText(from, "*2\ufe0f\u20e3 What is your email address?*");
+      return true;
+    }
+    if (step === 2) {
+      state.data.email = text;
+      state.step = 3;
+      await sendText(from, "*3\ufe0f\u20e3 What is your organisation or university?*");
+      return true;
+    }
+    if (step === 3) {
+      state.data.org = text;
+      state.step = 4;
+      await sendText(from, "*4\ufe0f\u20e3 What is your field or area of work?*");
+      return true;
+    }
+    if (step === 4) {
+      state.data.field = text;
+      convState.delete(from);
+      const d = state.data;
+      await sendText(from,
+        "\ud83d\udca1 *Thanks " + d.name + "! So excited to connect!* \ud83d\ude80\n\n" +
+        "Our team will reach out to you personally at *" + d.email + "* very soon.\n\n" +
+        "In the meantime, let\u2019s connect on LinkedIn! \ud83d\udc49 " + LINKEDIN + "\n\n" +
+        "Big things are built together \u2014 can\u2019t wait! \ud83d\udc4b"
+      );
+      await sendText(from,
+        "\ud83d\udce5 *New Collaborator Enquiry*\n\n" +
+        "Name: " + d.name + "\n" +
+        "Email: " + d.email + "\n" +
+        "Organisation: " + d.org + "\n" +
+        "Field: " + d.field + "\n" +
+        "Type: Interested in joining\n" +
+        "WhatsApp: " + from
+      );
+      setTimeout(function() { sendBackButton(from); }, 1000);
+      return true;
+    }
+  }
+
+  // ── ASK TEAM FLOW ────────────────────────────────────────────────
+  if (flow === "ask_team") {
+    convState.delete(from);
+    handedOffToTeam.set(from, Date.now());
+    await sendText(from,
+      "Got it! Our team will get back to you personally very soon \ud83d\udc9b\n\n" +
+      "In the meantime feel free to explore: www.talentkick.ch"
+    );
+    return true;
+  }
+
+  return false;
+}
+
 const ANSWERS = {
   app_apply:
     "\ud83d\udce2 *Apply to TK-S26*\n\n" +
     "This is your moment! \ud83d\ude80\n\n" +
     "The application portal for *TK-S26* is now open \u2014 our next cohort of Switzerland\u2019s most driven student founders.\n\n" +
-    "Here\u2019s how to apply:\n" +
+    "How to apply:\n" +
     "1\ufe0f\u20e3 Visit our application page\n" +
     "2\ufe0f\u20e3 Fill in the online form\n" +
     "3\ufe0f\u20e3 Submit before the deadline\n" +
     "4\ufe0f\u20e3 We review & invite selected candidates\n" +
     "5\ufe0f\u20e3 Receive your decision by email \u2705\n\n" +
-    "Spots are highly selective and limited \u2014 don\u2019t wait!\n\n" +
-    "\ud83d\udc49 Apply now: www.talentkick.ch/apply",
-
-  app_eligible:
-    "\u2705 *Am I Eligible?*\n\n" +
-    "We are looking for the next generation of entrepreneurial talents \ud83d\udca1\n\n" +
-    "You can apply if you are:\n" +
-    "\ud83c\udf93 A Master\u2019s or PhD student at a Swiss university or UAS\n" +
-    "\ud83c\udf0d From *any field* \u2014 tech, business, medicine, design & beyond\n" +
-    "\ud83d\ude80 Curious, driven and ready to explore entrepreneurship\n" +
-    "\ud83e\udd1d Willing to commit alongside your studies\n\n" +
-    "*Time commitment:*\n" +
-    "Semester 1: 2\u20136 hours per week\n" +
-    "Semesters 2\u20134: ~6 hours per semester\n\n" +
-    "No startup idea or prior experience needed \u2014 just ambition! \ud83d\udd25\n\n" +
-    "\ud83d\udc49 www.talentkick.ch/apply",
+    "Spots are highly selective \u2014 don\u2019t wait!\n\n" +
+    "\ud83d\udc49 Apply now: www.talentkick.ch/apply\n\n" +
+    "\ud83d\udcdd Stay in the loop: " + INTEREST_LIST,
 
   app_programme:
     "\ud83c\udf93 *How Does TK Work?*\n\n" +
     "A *highly selective, 1\u20134 semester programme* that turns exceptional students into founders \u2728\n\n" +
     "*Your journey:*\n" +
-    "\ud83e\udd1d Find your interdisciplinary co-founder team across Swiss universities\n" +
-    "\ud83e\uddd1\u200d\ud83d\udcbc 5 personal 1:1 coaching sessions to grow as a leader\n" +
+    "\ud83e\udd1d Find your interdisciplinary co-founder team\n" +
+    "\ud83e\uddd1\u200d\ud83d\udcbc 5 personal 1:1 coaching sessions\n" +
     "\ud83d\udca1 Validate a real startup idea alongside your studies\n" +
     "\ud83c\udf0d Deep connections into the Swiss startup ecosystem\n\n" +
-    "*Semester 1:* Bootcamps, workshops & team-building \u2014 you form your team and find your mentor\n" +
-    "*Semesters 2\u20134:* You\u2019re in the driving seat \u2014 validating ideas and building your runway\n\n" +
+    "*Semester 1:* Bootcamps, workshops & team-building\n" +
+    "*Semesters 2\u20134:* You\u2019re in the driving seat\n\n" +
     "*Funding:*\n" +
-    "Hit your milestones \u2192 receive the *CHF 5,000 Team Kick Award* \ud83c\udf89\n" +
+    "Hit your milestones \u2192 *CHF 5,000 Team Kick Award* \ud83c\udf89\n" +
     "Top teams unlock: Venture Kick, ETH Pioneer Fellowship, Innosuisse & more\n\n" +
-    "Fully *free* for selected participants \u2014 valued at CHF 20,000 per student!\n\n" +
-    "\ud83d\udc49 www.talentkick.ch/program",
+    "Fully *free* \u2014 valued at CHF 20,000 per student!\n\n" +
+    "\ud83d\udc49 www.talentkick.ch/program\n\n" +
+    "\ud83d\udcdd Join our interest list: " + INTEREST_LIST,
 
   app_qa:
     "\ud83d\udcde *Book a Free Q&A Session*\n\n" +
     "Still figuring out if TK is the right fit? Let\u2019s talk! \ud83d\ude0a\n\n" +
-    "Book a free 1-on-1 Q&A call with our team:\n" +
     "\u23f1\ufe0f 20\u201330 minutes\n" +
     "\ud83d\udcac Video call or WhatsApp call\n" +
-    "\ud83d\uddd3\ufe0f Mon\u2013Fri \u2014 check Calendly for available slots\n\n" +
-    "We love connecting with curious, driven students!\n\n" +
-    "\ud83d\udc49 calendly.com/gabriela-talentkick/tk-s26-q-a-with-talent-kick",
+    "\ud83d\uddd3\ufe0f Mon\u2013Fri \u2014 check Calendly for slots\n\n" +
+    "\ud83d\udc49 calendly.com/gabriela-talentkick/tk-s26-q-a-with-talent-kick\n\n" +
+    "\ud83d\udcdd Also join our interest list: " + INTEREST_LIST,
 
   app_other:
     "\ud83d\udcac *Something Else?*\n\n" +
-    "No worries \u2014 our team is happy to help with anything! \ud83d\ude4c\n\n" +
+    "No worries \u2014 our team is happy to help! \ud83d\ude4c\n\n" +
     "\ud83d\udce7 Email: info@talentkick.ch\n" +
     "\ud83d\udcac Or simply reply to this message\n\n" +
-    "We usually respond within a few hours \u26a1",
+    "We usually respond within a few hours \u26a1\n\n" +
+    "\ud83d\udcdd Stay in the loop: " + INTEREST_LIST,
 
   batch_schedule:
     "\ud83d\uddd3\ufe0f *Schedule, Events & Materials*\n\n" +
-    "All session links, bootcamp dates, event schedules and course materials are shared in your *cohort WhatsApp group* and via email \ud83d\udccc\n\n" +
-    "This includes: slides, recordings, workshop notes and ecosystem partner content.\n\n" +
+    "All session links, bootcamp dates, event schedules and materials are shared in your *cohort WhatsApp group* and via email \ud83d\udccc\n\n" +
     "Can\u2019t find something? Reply here or ask in your cohort group \u2014 we\u2019ve got you! \ud83d\ude4c\n\n" +
     "\ud83d\udc49 www.talentkick.ch/program",
 
@@ -250,11 +460,9 @@ const ANSWERS = {
     "*Semester 1 \u2014 Two key milestones:*\n" +
     "\ud83d\udd25 Milestone 1: Form a stable, interdisciplinary co-founder team\n" +
     "\ud83d\udd25 Milestone 2: Convince a successful entrepreneur as your mentor\n\n" +
-    "Nail both \u2192 receive the *CHF 5,000 Team Kick Award* & unlock Semesters 2\u20134! \ud83c\udf89\n\n" +
-    "*Your coaching:*\n" +
-    "You receive 5 personal 1:1 coaching sessions in Semester 1, continuing through Semesters 2\u20134.\n\n" +
-    "Sessions focus on leading yourself, leading others & leading change.\n\n" +
-    "To schedule or reschedule, contact your coach directly.\n" +
+    "Nail both \u2192 *CHF 5,000 Team Kick Award* & unlock Semesters 2\u20134! \ud83c\udf89\n\n" +
+    "*Coaching:* 5 personal 1:1 sessions focusing on leading yourself, leading others & leading change.\n\n" +
+    "To schedule, contact your coach directly.\n" +
     "\ud83d\udce7 info@talentkick.ch",
 
   batch_support:
@@ -263,7 +471,7 @@ const ANSWERS = {
     "\ud83d\udd27 Technical issues \u2192 email info@talentkick.ch with a screenshot\n" +
     "\ud83d\udcc5 Scheduling issues \u2192 contact your coach directly\n" +
     "\u2753 Programme questions \u2192 reply to this message\n\n" +
-    "We usually respond within a few hours during working hours \u26a1\n\n" +
+    "We usually respond within a few hours \u26a1\n\n" +
     "\ud83d\udce7 info@talentkick.ch",
 
   batch_other:
@@ -274,36 +482,11 @@ const ANSWERS = {
     "\ud83d\udccc Or post in your cohort WhatsApp group\n\n" +
     "\ud83d\udd50 Mon\u2013Fri, 9AM\u20136PM CET",
 
-  collab_existing:
-    "\ud83c\udf31 *Welcome back, TK Collaborator!*\n\n" +
-    "So great to hear from you \ud83d\ude4c\n\n" +
-    "For any questions, updates or collaboration needs:\n\n" +
-    "\ud83d\udce7 Email: info@talentkick.ch\n" +
-    "\ud83c\udf0d Website: www.talentkick.ch\n" +
-    "\ud83d\udcf8 Instagram: @talentkick\n" +
-    "\ud83d\udcbc LinkedIn: linkedin.com/company/talentkick\n\n" +
-    "Our team will get back to you very soon! \ud83d\udc9b",
-
-  collab_join:
-    "\ud83d\udca1 *Interested in Partnering or Mentoring?*\n\n" +
-    "We love this! \ud83d\ude80 Talent Kick thrives because of incredible people like you.\n\n" +
-    "*As a partner, we collaborate on:*\n" +
-    "\u2705 Co-hosted events & workshops\n" +
-    "\u2705 Joint programmes & challenges\n" +
-    "\u2705 Content & media collaborations\n" +
-    "\u2705 Ecosystem & funding connections\n\n" +
-    "*As a mentor, you would:*\n" +
-    "\ud83e\udd1d Guide an ambitious interdisciplinary student team\n" +
-    "\ud83d\udcac Share your real entrepreneurial experience\n" +
-    "\ud83c\udf0d Connect them to your network\n\n" +
-    "Interested? We\u2019d love to connect!\n\n" +
-    "\ud83d\udce7 info@talentkick.ch\n" +
-    "\ud83d\udc49 www.talentkick.ch",
-
   collab_other:
     "\ud83d\udcac *Something Else?*\n\n" +
     "No problem at all \u2014 our team is happy to help! \ud83d\ude4c\n\n" +
     "\ud83d\udce7 Email: info@talentkick.ch\n" +
+    "\ud83d\udcbc LinkedIn: " + LINKEDIN + "\n" +
     "\ud83d\udcac Or reply to this message\n\n" +
     "We usually respond within a few hours \u26a1",
 
@@ -313,32 +496,30 @@ const ANSWERS = {
     "Our mission: bring exceptional student talents together in interdisciplinary teams and translate academic excellence into real-world entrepreneurial impact \ud83c\udf0e\n\n" +
     "*What we offer:*\n" +
     "\ud83e\udd1d Find your interdisciplinary co-founder team\n" +
-    "\ud83e\uddd1\u200d\ud83d\udcbc Personal 1:1 coaching throughout\n" +
-    "\ud83d\udca1 Develop & validate your startup idea\n" +
+    "\ud83e\uddd1\u200d\ud83d\udcbc Personal 1:1 coaching\n" +
     "\ud83d\udcb0 CHF 5,000 Team Kick Award\n" +
     "\ud83c\udfc6 Access to Venture Kick, ETH Pioneer Fellowship, Innosuisse & more\n" +
-    "Fully *free* for selected participants \u2014 valued at CHF 20,000!\n\n" +
-    "An initiative of the *Kick Foundation*, supported by Gebert R\u00fcf Foundation, Foundation Botnar, ETH Domain and the ETH Foundation.\n\n" +
-    "\ud83d\udc49 www.talentkick.ch",
+    "Fully *free* \u2014 valued at CHF 20,000!\n\n" +
+    "An initiative of the *Kick Foundation*.\n\n" +
+    "\ud83d\udc49 www.talentkick.ch\n" +
+    "\ud83d\udcbc LinkedIn: " + LINKEDIN,
 
   ext_media:
     "\ud83d\udcf0 *Media & Press Enquiries*\n\n" +
     "\ud83d\udce7 Press contact: info@talentkick.ch\n\n" +
     "We are happy to:\n" +
     "\u2705 Provide quotes & statements\n" +
-    "\u2705 Arrange interviews with our team or alumni founders\n" +
-    "\u2705 Share our press kit & images\n" +
-    "\u2705 Collaborate on stories about Swiss entrepreneurship & innovation\n\n" +
-    "\ud83d\udccf Press kit available on request.\n" +
-    "We respond to media enquiries within 24 hours.",
+    "\u2705 Arrange interviews\n" +
+    "\u2705 Share press kit & images\n\n" +
+    "We respond within 24 hours.\n\n" +
+    "\ud83d\udcbc LinkedIn: " + LINKEDIN,
 
   ext_other:
     "\ud83d\udcac *Something Else?*\n\n" +
     "We\u2019d love to hear from you! \ud83d\ude4c\n\n" +
     "\ud83d\udce7 Email: info@talentkick.ch\n" +
     "\ud83c\udf0d Website: www.talentkick.ch\n" +
-    "\ud83d\udcf8 Instagram: @talentkick\n" +
-    "\ud83d\udcbc LinkedIn: linkedin.com/company/talentkick\n\n" +
+    "\ud83d\udcbc LinkedIn: " + LINKEDIN + "\n\n" +
     "We respond within a few business days \ud83d\ude0a",
 };
 
@@ -348,25 +529,36 @@ async function handleIncoming(message) {
   const from = message.from;
   const type = message.type;
 
-  if (waitingToAsk.has(from) && type === "text") {
-    waitingToAsk.delete(from);
-    handedOffToTeam.set(from, Date.now());
-    await sendText(from,
-      "Got it! Our team will get back to you personally very soon \ud83d\udc9b\n\n" +
-      "In the meantime feel free to explore: www.talentkick.ch"
-    );
-    return;
-  }
-
+  // ── Handle multi-step conversation flows ──────────────────────────
   if (type === "text") {
-    const body = (message.text && message.text.body ? message.text.body.toLowerCase().trim() : "");
-    const isGreeting = GREETINGS.some(function(g) { return body.includes(g); });
+    const body = (message.text && message.text.body ? message.text.body.trim() : "");
+    const bodyLower = body.toLowerCase();
+    const isGreeting = GREETINGS.some(function(g) { return bodyLower.includes(g); });
+
+    // Greeting resets everything
     if (isGreeting) {
-      handedOffToTeam.delete(from);
-      waitingToAsk.delete(from);
-      hasSeenIntro.delete(from);
+      clearState(from);
+      await sendIntro(from);
+      return;
     }
+
+    // If in a conv flow, handle it
+    if (convState.has(from)) {
+      await handleConvFlow(from, body);
+      return;
+    }
+
+    // If waiting to ask team
+    if (waitingToAsk.has(from)) {
+      convState.set(from, { flow: "ask_team", step: 1, data: {} });
+      await handleConvFlow(from, body);
+      return;
+    }
+
+    // If handed off — silent
     if (isHandedOff(from)) return;
+
+    // Otherwise show menu
     if (!hasSeenIntro.has(from)) {
       await sendIntro(from);
     } else {
@@ -375,17 +567,24 @@ async function handleIncoming(message) {
     return;
   }
 
-  if (isHandedOff(from)) {
-    console.log(from + " is with the team - bot silent");
-    return;
-  }
-
+  // ── If handed off but they tap a list → reactivate ────────────────
   if (type === "interactive" && message.interactive && message.interactive.type === "list_reply") {
+    // List selection always works even if handed off
+    handedOffToTeam.delete(from);
+    waitingToAsk.delete(from);
+    convState.delete(from);
+
     const id = message.interactive.list_reply.id;
     if (id === "menu_applicant") return sendApplicantMenu(from);
     if (id === "menu_batch")     return sendBatchMenu(from);
     if (id === "menu_collab")    return sendCollabMenu(from);
     if (id === "menu_external")  return sendExternalMenu(from);
+
+    // Special flows
+    if (id === "app_eligible")      return startEligibilityFlow(from);
+    if (id === "collab_existing")   return startCollabExistingFlow(from);
+    if (id === "collab_join")       return startCollabJoinFlow(from);
+
     if (ANSWERS[id]) {
       await sendText(from, ANSWERS[id]);
       const isOther = OTHER_IDS.indexOf(id) !== -1;
@@ -394,8 +593,10 @@ async function handleIncoming(message) {
     }
   }
 
+  // ── Button replies ─────────────────────────────────────────────────
   if (type === "interactive" && message.interactive && message.interactive.type === "button_reply") {
     const buttonId = message.interactive.button_reply.id;
+
     if (buttonId === "ask_team") {
       waitingToAsk.add(from);
       await sendText(from,
@@ -404,6 +605,7 @@ async function handleIncoming(message) {
       return;
     }
     if (buttonId === "back_menu") {
+      convState.delete(from);
       const subMenu = lastSubMenu.get(from);
       if (subMenu) return subMenu(from);
       return sendWhoAreYouMenu(from);
@@ -419,6 +621,7 @@ async function handleIncoming(message) {
     }
   }
 
+  // ── Fallback ───────────────────────────────────────────────────────
   if (!hasSeenIntro.has(from)) {
     await sendIntro(from);
   } else {
