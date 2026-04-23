@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-const ACCESS_TOKEN    = "EAANds37PrHwBRffPyPbIOrSbB5keqd9G3c5dIkrJEraHpHVGfRAVPwrHi2ZCuR9oyzHXVXtZAinMjZCiea78SXG3ul5ozEPf2qnM0fqeGTsrGIgIicZAaISYietG5o9OyM86QAMpxQRUWQzV0oKZAwqCGyvvJaldzf4oEELMj4usFi5MotO6znPbt7eNS0mckoHTdAARsp0QbjgJd";
+const ACCESS_TOKEN    = "EAANds37PrHwBRUndpiU729MwzgYn6sjXFvr0lIh0jKS0JL0stHjfKAD3RwUWyVNqdMmbZBVF14wgC3lsKQwRwg43fov8Q6aaZCdC5JS7VxKtioscSkzqFoZAq4N0zLG3HiXHfEvAlvMCzBLjlYPQMp8vFH32pmw94LlWgUjw9AtgjYgDkcmpl61FRetKURtQAZDZD";
 const PHONE_NUMBER_ID = "1115185408338275";
 const VERIFY_TOKEN    = "talentkick_webhook_2024";
 const API_URL         = "https://graph.facebook.com/v19.0/" + PHONE_NUMBER_ID + "/messages";
